@@ -1,59 +1,127 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  auth-service:
-    build: ./auth-service
+  replies-mngmnt:
+    build: ./replies-mngmnt
+    container_name: replies-mngmnt
     ports:
-      - "5000:5000"
+      - "3007:3007"
+    networks:
+      - app-network
     volumes:
-      - ./auth-service:/app
-    environment:
-      - PORT=5000
-    depends_on:
-      - db
+      - ./replies-mngmnt:/app
+      - replies-db-data:/app/data
 
-  grades-service:
-    build: ./grades-service
-    ports:
-      - "5001:5001"
-    volumes:
-      - ./grades-service:/app
-    environment:
-      - PORT=5001
-    depends_on:
-      - db
 
-  review-service:
-    build: ./review-service
+  grades-upload:
+    build: ./grades-upload
+    container_name: grades-upload
     ports:
-      - "5002:5000"
-    volumes:
-      - ./review-service:/app
+      - "3005:3005"
     environment:
-      - PORT=5000
+      PORT: 3005
+      JWT_SECRET: supersecretkey123
+      ORCHESTRATOR_URL: http://orchestrator:3000/api/grades-update
     depends_on:
-      - db
+      - orchestrator
+    networks:
+      - app-network
+    volumes:
+      - ./grades-upload:/app
+
+  orchestrator:
+    build: ./orchestrator
+    container_name: orchestrator
+    ports:
+      - "3000:3000"
+    depends_on:
+      - user-mngmnt
+      - request-mngmnt
+    environment:
+      PORT: 3000
+      JWT_SECRET: supersecretkey123
+      GRADES_UPLOAD_URL: http://grades-upload:3005/api/upload-grades
+      REQUEST_EVENTS_URL: http://request-mngmnt:3003/api/events
+      USER_MNGMNT_URL: http://user-mngmnt:3001
+      VIEW_GRADES_URL: http://view-grades:3009/api/receiveGradeUpdates
+      GRADES_STATISTICS_URL: http://grades-statistics:3011/api/grades-update
+
+    networks:
+      - app-network
+    volumes:
+      - ./orchestrator:/app
+
+  user-mngmnt:
+    build: ./user-mngmnt
+    container_name: user-mngmnt
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      JWT_SECRET: supersecretkey123
+      ORCHESTRATOR_URL: http://orchestrator:3000
+    networks:
+      - app-network
+    volumes:
+      - ./user-mngmnt:/app
+      - user-db-data:/app/data
+
+  request-mngmnt:
+    build: ./request-mngmnt
+    container_name: request-mngmnt
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      JWT_SECRET: supersecretkey123
+    networks:
+      - app-network
+    volumes:
+      - ./request-mngmnt:/app
+      - request-db-data:/app/data
+
+  view-grades:
+    build: ./view-grades
+    container_name: view-grades
+    ports:
+    - "3009:3009"
+    environment:
+      PORT: 3009
+      JWT_SECRET: supersecretkey123
+    networks:
+      - app-network
+    volumes:
+    - ./view-grades:/app
+    - view-grades-db-data:/app/db/data
+
+  grades-statistics:
+    build: ./grades-statistics
+    container_name: grades-statistics
+    ports:
+      - "3011:3011"
+    environment:
+      PORT: 3011
+      JWT_SECRET: supersecretkey123
+    networks:
+      - app-network
+    volumes:
+      - ./grades-statistics:/app
+      - grades-statistics-db-data:/app/data
 
   frontend:
     build: ./frontend
     ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-    stdin_open: true
-    tty: true
-
-  db:
-    image: postgres:15
+      - "5000:80"
     restart: always
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: clearsky
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+
+
+networks:
+  app-network:
+    driver: bridge
 
 volumes:
-  pgdata:
+  user-db-data:
+  request-db-data:
+  replies-db-data:
+  view-grades-db-data:
+  grades-statistics-db-data:

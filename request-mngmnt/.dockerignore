@@ -1,0 +1,15 @@
+# Node dependencies
+node_modules
+npm-debug.log
+
+# Logs
+logs
+*.log
+
+# OS ή IDE αρχεία
+.DS_Store
+.vscode
+.idea
+
+# Docker artifacts
+docker-compose.override.yml
