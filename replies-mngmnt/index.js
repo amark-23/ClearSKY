@@ -14,6 +14,7 @@ app.use(bodyParser.json());
 app.use('/api', replyRoute);
 app.use('/api', displayRoute);
 app.use('/api', eventReceiver);
+app.use('/api', require ('./routes/repliedRequests'));
 
 
 // Healthcheck

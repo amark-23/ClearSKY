@@ -22,6 +22,8 @@ router.post('/upload-grades', authenticateToken, upload.single('gradesFile'), as
         const usefulRows = data.slice(2);
         const operations = [];
         const changedGrades = [];
+        const insertedGrades = [];
+        const updatedGrades = [];
 
         for (const row of usefulRows) {
             if (!Array.isArray(row) || row.length < 7 || isNaN(row[0])) continue;
@@ -33,8 +35,13 @@ router.post('/upload-grades', authenticateToken, upload.single('gradesFile'), as
                 periodFull,
                 subjectFull,
                 scale,
-                grade
+                grade,
+                , // στήλη 8 (index 7) - αγνοείται
+                ...rest
             ] = row;
+
+            // Πάρε μόνο τις στήλες 9-18 (index 8-17)
+            const questionGrades = rest.slice(0, 10);
 
             const subIDMatch = String(subjectFull).match(/\((\d+)\)/);
             if (!subIDMatch) continue;
@@ -59,17 +66,26 @@ router.post('/upload-grades', authenticateToken, upload.single('gradesFile'), as
                     try {
                         const existing = await db.get(selectSQL, selectParams);
 
+                        const questionsObj = {};
+                        for (let i = 0; i < 10; i++) {
+                            questionsObj[`Q${String(i + 1).padStart(2, '0')}`] = questionGrades[i] || null;
+                        }
+
                         if (existing) {
                             if (Number(existing.grade) === Number(grade)) {
                                 return 'skipped';
                             }
 
-                            await db.run(
-                                `UPDATE grades SET grade = ?, submissionDate = ? WHERE gradeID = ?`,
-                                [grade, submissionDate, existing.gradeID]
-                            );
+                            const updateSQL = `
+                                UPDATE grades SET grade = ?, submissionDate = ?,
+                                    ${Object.keys(questionsObj).map(k => `${k} = ?`).join(', ')}
+                                WHERE gradeID = ?
+                            `;
+                            const updateParams = [grade, submissionDate, ...Object.values(questionsObj), existing.gradeID];
 
-                            changedGrades.push({
+                            await db.run(updateSQL, updateParams);
+
+                            const updatedGrade = {
                                 gradeID: existing.gradeID,
                                 AMnumber,
                                 studentName,
@@ -79,21 +95,25 @@ router.post('/upload-grades', authenticateToken, upload.single('gradesFile'), as
                                 scale,
                                 grade,
                                 instrID,
-                                submissionDate
-                            });
+                                submissionDate,
+                                ...questionsObj
+                            };
+                            updatedGrades.push(updatedGrade);
 
                             return 'updated';
                         } else {
-                            const insertResult = await db.run(`
+                            const insertSQL = `
                                 INSERT INTO grades
-                                (AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            `, [AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate]);
+                                (AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate,
+                                 ${Object.keys(questionsObj).join(', ')})
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${Object.keys(questionsObj).map(() => '?').join(', ')})
+                            `;
+                            const insertParams = [AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate, ...Object.values(questionsObj)];
 
-                            const newGradeID = insertResult.lastID;
+                            const insertResult = await db.run(insertSQL, insertParams);
 
-                            changedGrades.push({
-                                gradeID: newGradeID,
+                            const insertedGrade = {
+                                gradeID: insertResult.lastID,
                                 AMnumber,
                                 studentName,
                                 studentMail,
@@ -102,8 +122,10 @@ router.post('/upload-grades', authenticateToken, upload.single('gradesFile'), as
                                 scale,
                                 grade,
                                 instrID,
-                                submissionDate
-                            });
+                                submissionDate,
+                                ...questionsObj
+                            };
+                            insertedGrades.push(insertedGrade);
 
                             return 'inserted';
                         }
@@ -122,12 +144,15 @@ router.post('/upload-grades', authenticateToken, upload.single('gradesFile'), as
         const failed = results.filter(r => r === 'error').length;
 
         // 🔁 Αποστολή στον orchestrator
-        if (changedGrades.length > 0) {
+        const SEND_TO_ORCH = true; // <-- Βάλε true για να ενεργοποιήσεις ξανά την αποστολή
+
+        if ((insertedGrades.length > 0 || updatedGrades.length > 0) && SEND_TO_ORCH) {
             try {
                 const orchestratorURL = process.env.ORCHESTRATOR_URL;
+                console.log('📦 ΜΟΝΟ updated προς debug:', JSON.stringify(updatedGrades, null, 2));
                 await axios.post(
                     orchestratorURL,
-                    { grades: changedGrades },
+                    { grades: [...insertedGrades, ...updatedGrades] },
                     {
                         headers: {
                             Authorization: req.headers['authorization'],
@@ -158,5 +183,6 @@ router.post('/upload-grades', authenticateToken, upload.single('gradesFile'), as
         res.status(500).json({ message: 'Error processing uploaded file' });
     }
 });
+
 
 module.exports = router;

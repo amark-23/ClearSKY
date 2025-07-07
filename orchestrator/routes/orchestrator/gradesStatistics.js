@@ -19,6 +19,7 @@ router.get('/statistics', async (req, res) => {
         });
 
         res.json(response.data);
+        console.log("Received data:", response.data);
     } catch (error) {
         console.error('[Orchestrator] Error calling grades-statistics MS:', error.message);
 

@@ -2,130 +2,128 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db/connection');
 
-// Endpoint: GET /api/statistics/distribution
-// Query params (optional): subjectName, period
 router.get('/distribution', async (req, res) => {
   const { subjectName, period } = req.query;
+  const debug = {
+    input: { subjectName, period },
+    queries: [],
+    results: [],
+    messages: [],
+  };
 
   try {
-    // Αν δεν έχουν δοθεί παράμετροι, επιστρέφει κατανομή για όλα τα ζευγάρια (μάθημα-περίοδος)
-    if (!subjectName && !period) {
-      const allDistributions = await db.all(`
-        SELECT 
-          s.subjectName,
-          g.period,
-          gr.grade,
-          COUNT(g.grade) as count
-        FROM (
-          SELECT 0 AS grade UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
-          SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
-          SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10
-        ) gr
-        CROSS JOIN subjects s
-        CROSS JOIN (SELECT DISTINCT period FROM grades) p
-        LEFT JOIN grades g
-          ON g.grade = gr.grade AND g.subID = s.subjectID AND g.period = p.period
-        GROUP BY s.subjectName, g.period, gr.grade
-        ORDER BY s.subjectName, g.period, gr.grade
-      `);
+    // Debug: Δες τι υπάρχει στον πίνακα grades
+    const allGrades = await db.all("SELECT * FROM grades");
+    //debug.allGrades = allGrades;
+    //console.log("[DEBUG] Όλα τα grades:", allGrades);
 
-      // Ομαδοποίηση ανά μάθημα-περίοδο
-      const grouped = {};
-      allDistributions.forEach(row => {
-        const key = `${row.subjectName}__${row.period}`;
-        if (!grouped[key]) {
-          grouped[key] = {
-            subjectName: row.subjectName,
-            period: row.period,
-            distribution: []
-          };
-        }
-        grouped[key].distribution.push({ grade: row.grade, count: row.count });
-      });
+    // Debug: Δες τι υπάρχει στον πίνακα subjects
+    const allSubjects = await db.all("SELECT * FROM subjects");
+    //debug.allSubjects = allSubjects;
+    //console.log("[DEBUG] Όλα τα subjects:", allSubjects);
 
-      // Φιλτράρουμε για να αφαιρέσουμε περιόδους null αν υπάρχει το μάθημα με περίοδο μη null
-      const filteredGrouped = {};
+    // Debug: Δες τι επιστρέφει το αρχικό query για subject-period
+    const allSP = await db.all(`
+      SELECT DISTINCT s.subjectID, s.subjectName, g.period
+      FROM grades g
+      JOIN subjects s ON g.subID = s.subjectID
+      GROUP BY s.subjectName ,g.period
+      ORDER BY s.subjectName, g.period
+    `);
+    
+    console.log("[DEBUG] Όλα τα subject-period:", allSP);
 
-      // Μαζεύουμε όλα τα μαθήματα που έχουν τουλάχιστον μία περίοδο μη null
-      const subjectsWithNonNullPeriod = new Set(
-        Object.values(grouped)
-          .filter(entry => entry.period !== null)
-          .map(entry => entry.subjectName)
-      );
+    const results = [];
 
-      Object.entries(grouped).forEach(([key, entry]) => {
-        if (
-          entry.period !== null ||
-          !subjectsWithNonNullPeriod.has(entry.subjectName)
-        ) {
-          filteredGrouped[key] = entry;
-        }
-      });
+    for (const sp of allSP) {
+      const { subjectID, subjectName, period } = sp;
+      debug.messages.push(`Processing: subjectID=${subjectID}, subjectName=${subjectName}, period=${period}`);
 
-      const result = Object.values(filteredGrouped);
-      console.log("[STATISTICS] Filtered distribution for all subjects-periods:", JSON.stringify(result, null, 2));
-      return res.json(result);
-    }
+      const whereClauses = [];
+      const params = [];
 
-    let conditions = [];
-    let params = [];
-    let queryParams = [];
-    let subjectID = null;
-
-    // Αν έχει δοθεί subjectName, βρίσκουμε το αντίστοιχο subjectID
-    if (subjectName) {
-      const subjectRow = await db.get(
-        'SELECT subjectID FROM subjects WHERE subjectName = ?',
-        [subjectName]
-      );
-
-      if (!subjectRow) {
-        console.warn(`[STATISTICS] Subject not found: "${subjectName}"`);
-        return res.status(200).json({
-          subjectName,
-          period: period || 'ALL',
-          distribution: [],
-          message: `Subject "${subjectName}" not found`
-        });
+      if (subjectID !== null) {
+        whereClauses.push("grades.subID = ?");
+        params.push(subjectID);
       }
-      subjectID = subjectRow.subjectID;
-    }
+      if (period !== null) {
+        whereClauses.push("grades.period = ?");
+        params.push(period);
+      }
+      const whereSQL = whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
-    if (subjectID) queryParams.push(subjectID);
-    if (period) queryParams.push(period);
-
-    const distribution = await db.all(
-      `
+      const distSQL = `
         WITH grades_range AS (
           SELECT 0 AS grade UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
           SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
           SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10
         )
-        SELECT 
-          grades_range.grade, 
-          COUNT(grades.grade) as count
+        SELECT grades_range.grade, COUNT(grades.grade) AS count
         FROM grades_range
-        LEFT JOIN grades 
-          ON grades.grade = grades_range.grade
-          ${subjectID ? 'AND grades.subID = ?' : ''}
-          ${period ? 'AND grades.period = ?' : ''}
+        LEFT JOIN grades ON grades.grade = grades_range.grade
+        ${whereSQL}
         GROUP BY grades_range.grade
         ORDER BY grades_range.grade ASC
-      `,
-      queryParams
-    );
+      `;
+      const distribution = await db.all(distSQL, params);
+      //debug.queries.push({ sql: distSQL, params, result: distribution });
+      console.log(`[DEBUG] Distribution για ${subjectName} / ${period}:`, distribution);
 
-    const response = {
-      subjectName: subjectName || 'ALL',
-      period: period || 'ALL',
-      distribution
-    };
-    console.log("[STATISTICS] Distribution for query:", JSON.stringify(response, null, 2));
-    res.json(response);
+      const qDistributions = {};
+      for (let i = 1; i <= 10; i++) {
+        const qField = `Q${i.toString().padStart(2, '0')}`;
+
+        const qSQL = `
+          WITH grades_range AS (
+            SELECT 0 AS grade UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL
+            SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
+            SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10
+          )
+          SELECT grades_range.grade AS grade, COUNT(g.${qField}) AS count
+          FROM grades_range
+          LEFT JOIN grades g ON g.${qField} = grades_range.grade
+          WHERE g.subID = ? AND g.period = ?
+          GROUP BY grades_range.grade
+          ORDER BY grades_range.grade ASC
+        `;
+
+        const qResult = await db.all(qSQL, [subjectID, period]);
+        qDistributions[qField] = qResult;
+
+        console.log("[STATS] RESULT FOR Q-XX: ", qResult);
+
+        debug.queries.push({
+          sql: qSQL,
+          params: [subjectID, period],
+          question: qField,
+          subjectName,
+          period,
+          result: qResult,
+        });
+      }
+
+
+
+      results.push({
+        subjectName,
+        period,
+        distribution,
+        qDistributions
+      });
+    }
+
+    debug.messages.push("Returning all subject-period distributions");
+
+    return res.json({
+      message: "All subjects and periods distribution",
+      allDistributions: results,
+      debug,
+    });
 
   } catch (err) {
-    console.error('[STATISTICS] Error fetching distribution:', err);
-    res.status(500).json({ message: 'Internal server error' });
+    console.error('Error fetching distribution:', err);
+    debug.error = err.message;
+    return res.status(500).json({ message: "Internal server error", debug });
   }
 });
 

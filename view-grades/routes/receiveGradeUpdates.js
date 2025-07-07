@@ -7,36 +7,38 @@ router.post('/', async (req, res) => {
         gradeID,
         AMnumber, studentName, studentMail,
         period, instrID, subID, scale, grade,
-        submissionDate
+        submissionDate,
+        Q01 = null, Q02 = null, Q03 = null, Q04 = null, Q05 = null,
+        Q06 = null, Q07 = null, Q08 = null, Q09 = null, Q10 = null
     } = req.body;
 
-    if (!gradeID || !AMnumber || !studentName || !studentMail || !period || !instrID || !subID || !scale || grade == null || !submissionDate) {
-        return res.status(400).json({ message: 'Missing required grade fields' });
-    }
+    // Δεν κάνουμε πλέον υποχρεωτικό έλεγχο πεδίων, αν θέλεις μπορείς να προσθέσεις validation
 
     try {
-        // Βρες όλες τις εγγραφές για τον ίδιο μαθητή/μάθημα/περίοδο/κλίμακα με χρονική σειρά
-  const oldRecords = await run(
-    `SELECT submissionDate FROM grades WHERE AMnumber = ? AND subID = ? AND period = ? AND scale = ? ORDER BY submissionDate ASC`,
-    [AMnumber, subID, period, scale]
-  );
 
-  // Αν υπάρχουν παλιές
-  if (oldRecords.length > 1) {
-    // Κράτα την παλαιότερη (index 0) και σβήσε τις υπόλοιπες (όλες εκτός της πρώτης)
-    const datesToDelete = oldRecords.slice(1).map(r => r.submissionDate);
-    await run(
-      `DELETE FROM grades WHERE AMnumber = ? AND subID = ? AND period = ? AND scale = ? AND submissionDate IN (${datesToDelete.map(() => '?').join(',')})`,
-      [AMnumber, subID, period, scale, ...datesToDelete]
-    );
-  }
+        // Κάνε insert τη νέα εγγραφή μαζί με τα Q01-Q10
+        await run(
+            `INSERT INTO grades (
+                gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate,
+                Q01, Q02, Q03, Q04, Q05, Q06, Q07, Q08, Q09, Q10
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(gradeID) DO UPDATE SET
+                AMnumber=excluded.AMnumber,
+                studentName=excluded.studentName,
+                studentMail=excluded.studentMail,
+                period=excluded.period,
+                instrID=excluded.instrID,
+                subID=excluded.subID,
+                scale=excluded.scale,
+                grade=excluded.grade,
+                submissionDate=excluded.submissionDate,
+                Q01=excluded.Q01, Q02=excluded.Q02, Q03=excluded.Q03, Q04=excluded.Q04, Q05=excluded.Q05,
+                Q06=excluded.Q06, Q07=excluded.Q07, Q08=excluded.Q08, Q09=excluded.Q09, Q10=excluded.Q10
+            `,
+            [gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate,
+             Q01, Q02, Q03, Q04, Q05, Q06, Q07, Q08, Q09, Q10]
+        );
 
-  // Κάνε insert τη νέα εγγραφή
-  await run(
-    `INSERT INTO grades (gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate]
-  );
         res.status(201).json({ message: 'Grade inserted', gradeID });
     } catch (err) {
         console.error('[GRADE UPDATE] ❌', err.message);

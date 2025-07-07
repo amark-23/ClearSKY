@@ -28,6 +28,7 @@ app.use('/api', viewGradesRouter);
 app.use("/api/submissionInfo", require("./routes/submissionInfo"));
 app.use('/api/submitReply', require('./routes/submitReply'));
 app.use('/api', repliesRouter);
+app.use('/api', require('./routes/repliedRequests'));
 
 
 app.listen(PORT, () => {

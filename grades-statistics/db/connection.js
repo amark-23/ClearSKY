@@ -15,16 +15,26 @@ function initializeDb() {
         // Δημιουργία πίνακα grades
         db.run(`
             CREATE TABLE IF NOT EXISTS grades (
-                gradeID INTEGER PRIMARY KEY,
-                AMnumber TEXT NOT NULL,
-                studentName TEXT NOT NULL,
-                studentMail TEXT NOT NULL,
-                period TEXT NOT NULL,
-                instrID INTEGER NOT NULL,
-                subID INTEGER NOT NULL,
-                scale TEXT NOT NULL,
-                grade INTEGER NOT NULL,
-                submissionDate TEXT NOT NULL
+            gradeID INTEGER PRIMARY KEY,
+            AMnumber TEXT NOT NULL,
+            studentName TEXT NOT NULL,
+            studentMail TEXT NOT NULL,
+            period TEXT NOT NULL,
+            instrID INTEGER NOT NULL,
+            subID INTEGER NOT NULL,
+            scale TEXT NOT NULL,
+            grade INTEGER NOT NULL,
+            submissionDate TEXT NOT NULL,
+            Q01 INTEGER,
+            Q02 INTEGER,
+            Q03 INTEGER,
+            Q04 INTEGER,
+            Q05 INTEGER,
+            Q06 INTEGER,
+            Q07 INTEGER,
+            Q08 INTEGER,
+            Q09 INTEGER,
+            Q10 INTEGER
             )
         `);
 

@@ -1,6 +1,5 @@
-// MyCourses.jsx
-
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Header from "../../components/Header";
 import React from "react";
 import {
@@ -19,8 +18,29 @@ function MyCourses() {
   const [error, setError] = useState("");
   const [statistics, setStatistics] = useState([]);
   const [reviewMessages, setReviewMessages] = useState({});
+  const [isProfessor, setIsProfessor] = useState(false); // ΝΕΟ
+  const navigate = useNavigate();
 
   useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      try {
+        const decoded = JSON.parse(atob(token.split('.')[1]));
+        if (decoded.role === "instructor") {
+          setIsProfessor(true);
+          return;
+        }
+      } catch (e) {
+        // Αν το token είναι invalid, θεώρησέ τον ως καθηγητή για ασφάλεια
+        setIsProfessor(true);
+        return;
+      }
+    } else {
+      // Αν δεν υπάρχει token, θεώρησέ τον ως καθηγητή για ασφάλεια
+      setIsProfessor(true);
+      return;
+    }
+
     const fetchGrades = async () => {
       try {
         const res = await fetch("http://localhost:3000/api/grades", {
@@ -32,9 +52,8 @@ function MyCourses() {
         if (!res.ok) throw new Error("Failed to fetch grades");
 
         const data = await res.json();
-
         const grouped = {};
-        //
+
         const statusPromises = Object.entries(data).map(async ([key, grade]) => {
           const [name, semester] = key.split(" - ");
 
@@ -54,7 +73,7 @@ function MyCourses() {
             const statusData = await statusRes.json();
             // if two grading dates exist => "closed", else "open"
             gradingStatus =
-              statusData.lastSubmission && statusData.secondLastSubmission
+              statusData.lastSubmission && statusData.secondLastSubmission && statusData.lastSubmission != statusData.secondLastSubmission
                 ? "closed"
                 : statusData.lastSubmission
                 ? "open"
@@ -71,11 +90,11 @@ function MyCourses() {
               grade: grade.grade,
               gradeID: grade.gradeID
             }],
+            Q: grade.Q || {}, // <-- Πρόσθεσε αυτό!
           };
         });
 
-      await Promise.all(statusPromises);
-        //
+        await Promise.all(statusPromises);
         setCourses(Object.values(grouped));
       } catch (err) {
         console.error("❌", err);
@@ -92,7 +111,10 @@ function MyCourses() {
         });
         if (!res.ok) throw new Error("Failed to fetch statistics");
         const data = await res.json();
-        setStatistics(data);
+        const statsArray = Array.isArray(data.allDistributions)
+          ? data.allDistributions
+          : [];
+        setStatistics(statsArray);
       } catch (err) {
         console.error("📊 Error fetching stats:", err);
       }
@@ -126,12 +148,12 @@ function MyCourses() {
     fetchReplies();
     fetchGrades();
     fetchStatistics();
-  }, []);
+  }, [navigate]);
 
-  const handleExpand = (courseName, section) => {
+  const handleExpand = (courseKey, section) => {
     setExpanded((prev) => ({
       ...prev,
-      [courseName]: prev[courseName] === section ? null : section,
+      [courseKey]: prev[courseKey] === section ? null : section,
     }));
   };
 
@@ -148,6 +170,20 @@ function MyCourses() {
     ...prev,
     [courseName]: message,
   }));
+  };
+
+  const calculateQuantile = (dist, percentile) => {
+    const data = [];
+    dist.forEach((d) => {
+      for (let i = 0; i < d.count; i++) data.push(d.grade);
+    });
+    if (data.length === 0) return null;
+    data.sort((a, b) => a - b);
+    const idx = (data.length - 1) * percentile;
+    const lower = Math.floor(idx);
+    const upper = Math.ceil(idx);
+    if (lower === upper) return data[lower];
+    return data[lower] + (data[upper] - data[lower]) * (idx - lower);
   };
 
   const handleSubmitReviewRequest = async (course) => {
@@ -187,6 +223,14 @@ function MyCourses() {
   };
 
 
+  if (isProfessor) {
+    return (
+      <div style={{ padding: "40px", textAlign: "center", fontSize: "1.2em" }}>
+        Αυτή η σελίδα δεν είναι διαθέσιμη για καθηγητές.
+      </div>
+    );
+  }
+
   return (
     <div style={containerStyle}>
       <Header />
@@ -210,6 +254,10 @@ function MyCourses() {
             );
             const dist = normalizeDistribution(stats?.distribution);
 
+            // --- ΝΕΟ: Έλεγχος αν υπάρχει reply για το μάθημα ---
+            const replyKey = `${course.subjectID} - ${course.grades[0].gradeID}`;
+            const hasReply = !!reviewMessages.replies?.[replyKey];
+            const courseKey = `${course.name} - ${course.semester}`;
             return (
               <React.Fragment key={i}>
                 <tr>
@@ -217,27 +265,27 @@ function MyCourses() {
                   <td style={tdStyle}>{course.semester}</td>
                   <td style={tdStyle}>{course.gradingStatus}</td>
                   <td style={tdStyle}>
-                    <button style={button} onClick={() => handleExpand(course.name, "grades")}>
+                    <button style={button} onClick={() => handleExpand(courseKey, "grades")}>
                       View my grades
                     </button>
                     <button
                       style={{
                         ...button,
-                        backgroundColor: course.gradingStatus === "open" ? "#17a2b8" : "#ccc",
-                        cursor: course.gradingStatus === "open" ? "pointer" : "not-allowed",
+                        backgroundColor: course.gradingStatus === "open" && !hasReply ? "#17a2b8" : "#ccc",
+                        cursor: course.gradingStatus === "open" && !hasReply ? "pointer" : "not-allowed",
                       }}
-                      disabled={course.gradingStatus !== "open"}
-                      onClick={() => handleExpand(course.name, "review")}
+                      disabled={course.gradingStatus !== "open" || hasReply}
+                      onClick={() => handleExpand(courseKey, "review")}
                     >
                       Ask for review
                     </button>
-                    <button style={button} onClick={() => handleExpand(course.name, "status")}>
+                    <button style={button} onClick={() => handleExpand(courseKey, "status")}>
                       View review status
                     </button>
                   </td>
                 </tr>
 
-                {expanded[course.name] === "grades" && (
+                {expanded[courseKey] === "grades" && (
                   <tr>
                     <td colSpan="4" style={expandStyle}>
                       <h4>{course.name} – Grades</h4>
@@ -245,29 +293,60 @@ function MyCourses() {
                         {course.grades.map((g, idx) => (
                           <div key={idx}>
                             <strong>{g.scale}:</strong> {g.grade}
+                            {/* Εμφάνιση αναλυτικών βαθμών Q αν υπάρχουν */}
+                            {course.Q && Object.keys(course.Q).length > 0 ? (
+                              <>
+                                {Object.entries(course.Q).map(([qKey, qVal]) => (
+                                  <span key={qKey} style={{ marginLeft: 10 }}>
+                                    <strong>{qKey}:</strong> {qVal === null ? "-" : qVal}
+                                  </span>
+                                ))}
+                              </>
+                            ) : (
+                              <span style={{ marginLeft: 10, color: "red" }}>(no Q data)</span>
+                            )}
                           </div>
                         ))}
                       </div>
-                      <div style={chartRow}>
-                        <div style={chartBox}>
-                          <ResponsiveContainer width="100%" height={150}>
-                            <BarChart data={dist}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis dataKey="grade" />
-                              <YAxis allowDecimals={false} />
-                              <Tooltip />
-                              <Bar dataKey="count" fill="#007acc" />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div style={chartBox}>Q1 Chart</div>
-                        <div style={chartBox}>Q2 Chart</div>
+                      <div style={mainChart}>
+                        <ResponsiveContainer width="100%" height={250}>
+                          <BarChart data={dist}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="grade" label={{ value: "Grade", position: "insideBottom", offset: -5 }} />
+                            <YAxis allowDecimals={false} />
+                            <Tooltip />
+                            <Bar dataKey="count" fill="#007acc" />
+                          </BarChart>
+                        </ResponsiveContainer>
                       </div>
+
+                      {stats?.qDistributions && (
+                        <div style={chartsContainer}>
+                          {Object.entries(stats.qDistributions).map(([question, qDist], i) => (
+                            <div key={i} style={largeChartContainer}>
+                              <div style={{ textAlign: "center", marginBottom: 8, fontWeight: "600" }}>{question}</div>
+                              <ResponsiveContainer width="100%" height={200}>
+                                <BarChart data={normalizeDistribution(qDist)}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis
+                                    dataKey="grade"
+                                    label={{ value: "Grade", position: "insideBottom", offset: -5 }}
+                                    tick={{ fontSize: 12 }}
+                                  />
+                                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                                  <Tooltip />
+                                  <Bar dataKey="count" fill="#009688" />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )}
 
-                {expanded[course.name] === "review" && (
+                {expanded[courseKey] === "review" && (
                   <tr>
                     <td colSpan="4" style={expandStyle}>
                       <h4>New Review Request – {course.name}</h4>
@@ -287,7 +366,7 @@ function MyCourses() {
                   </tr>
                 )}
 
-                {expanded[course.name] === "status" && (
+                {expanded[courseKey] === "status" && (
                   <tr>
                     <td colSpan="4" style={expandStyle}>
                       <h4>Review Request Status – {course.name}</h4>
@@ -322,83 +401,99 @@ function MyCourses() {
   );
 }
 
-// Styles
 const containerStyle = {
-  padding: "30px",
-  maxWidth: "1000px",
-  margin: "0 auto",
-  fontFamily: "sans-serif",
+  maxWidth: 900,
+  margin: "auto",
+  padding: 20,
+  fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
 };
 
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse",
+  tableLayout: "fixed",
+  minWidth: 700,
 };
 
 const thStyle = {
-  padding: "12px",
-  backgroundColor: "#f5f5f5",
-  borderBottom: "2px solid #ccc",
+  borderBottom: "1px solid #ddd",
+  padding: "12px 8px",
   textAlign: "left",
+  backgroundColor: "#f2f2f2",
 };
 
 const tdStyle = {
-  padding: "12px",
   borderBottom: "1px solid #ddd",
+  padding: "10px 8px",
+  overflowWrap: "break-word",
+  verticalAlign: "top",
 };
 
 const button = {
-  marginRight: "6px",
-  padding: "6px 10px",
-  borderRadius: "5px",
-  border: "none",
-  backgroundColor: "#007bff",
-  color: "#fff",
+  marginRight: 8,
+  padding: "6px 12px",
+  fontSize: 14,
   cursor: "pointer",
+  borderRadius: 4,
+  border: "none",
+  backgroundColor: "#007acc",
+  color: "white",
+  transition: "background-color 0.3s ease",
 };
 
 const expandStyle = {
   backgroundColor: "#f9f9f9",
-  padding: "20px",
+  padding: 20,
+  borderTop: "1px solid #ddd",
 };
 
 const gradesSection = {
-  display: "flex",
-  gap: "20px",
-  marginBottom: "20px",
+  marginBottom: 20,
+  fontSize: 16,
+};
+//
+const mainChart = {
+  width: "100%",
+  height: 250,
+  marginBottom: 20,
 };
 
-const chartRow = {
+const chartsContainer = {
   display: "flex",
-  gap: "20px",
+  flexDirection: "row",
+  overflowX: "auto",
+  gap: 20,
+  paddingBottom: 10,
 };
 
-const chartBox = {
-  flex: "1",
-  height: "150px",
-  backgroundColor: "#e6e6e6",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: "6px",
+const largeChartContainer = {
+  minWidth: 240,
+  flexShrink: 0,
+  backgroundColor: "#fff",
+  border: "1px solid #ddd",
+  borderRadius: 6,
+  padding: 10,
 };
 
 const textarea = {
   width: "100%",
-  height: "80px",
-  padding: "10px",
-  borderRadius: "6px",
+  minHeight: 100,
+  padding: 10,
+  fontSize: 14,
+  borderRadius: 4,
   border: "1px solid #ccc",
-  marginTop: "10px",
+  resize: "vertical",
 };
 
 const submitButton = {
-  marginTop: "10px",
+  marginTop: 12,
   padding: "8px 16px",
-  backgroundColor: "#28a745",
-  color: "#fff",
+  fontSize: 14,
+  cursor: "pointer",
+  borderRadius: 4,
   border: "none",
-  borderRadius: "6px",
+  backgroundColor: "#28a745",
+  color: "white",
 };
 
 

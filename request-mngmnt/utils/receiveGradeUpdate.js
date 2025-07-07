@@ -11,7 +11,7 @@ async function receiveGradeUpdate(data) {
         subID,
         scale,
         grade,
-        submissionDate, // <-- προσθήκη
+        submissionDate,
     } = data;
 
     if (
@@ -24,31 +24,30 @@ async function receiveGradeUpdate(data) {
         !subID ||
         !scale ||
         grade == null ||
-        !submissionDate // <-- προσθήκη
+        !submissionDate
     ) {
         throw new Error('Missing required grade data fields');
     }
 
     try {
-        // 1. Διαγραφή παλιού βαθμού με το ίδιο gradeID (αν υπάρχει)
-        const deleteSql = `
-            DELETE FROM grades
-            WHERE AMnumber = ?
-              AND studentName = ?
-              AND studentMail = ?
-              AND period = ?
-              AND instrID = ?
-              AND subID = ?
-              AND scale = ?
+        const upsertSql = `
+            INSERT INTO grades (
+                gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(gradeID) DO UPDATE SET
+                AMnumber=excluded.AMnumber,
+                studentName=excluded.studentName,
+                studentMail=excluded.studentMail,
+                period=excluded.period,
+                instrID=excluded.instrID,
+                subID=excluded.subID,
+                scale=excluded.scale,
+                grade=excluded.grade,
+                submissionDate=excluded.submissionDate
         `;
-        await db.run(deleteSql, [AMnumber, studentName, studentMail, period, instrID, subID, scale]);
-
-        // 2. Εισαγωγή νέου βαθμού με συγκεκριμένο gradeID
-        const insertSql = `
-            INSERT INTO grades (gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
-        await db.run(insertSql, [gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate]);
+        await db.run(upsertSql, [
+            gradeID, AMnumber, studentName, studentMail, period, instrID, subID, scale, grade, submissionDate
+        ]);
     } catch (err) {
         console.error('[GRADE] ❌ Error syncing grade:', err.message);
         throw err;

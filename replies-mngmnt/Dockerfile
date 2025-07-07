@@ -13,4 +13,4 @@ RUN apt-get update && apt-get install -y sqlite3
 
 EXPOSE 3007
 
-CMD ["npm", "start"]
+CMD ["node", "index.js"]

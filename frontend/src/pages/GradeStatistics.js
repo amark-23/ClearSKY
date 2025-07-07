@@ -15,10 +15,10 @@ function GradeStatistics() {
   const [courseStats, setCourseStats] = useState([]);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [distribution, setDistribution] = useState([]);
+  const [questionDistributions, setQuestionDistributions] = useState([]);
   const [submissionDatesMap, setSubmissionDatesMap] = useState({});
   const [error, setError] = useState(null);
 
-  // ✅ Helper για ημερομηνία και ώρα
   const formatDate = (dateStr) => {
     if (!dateStr) return { short: "—", full: "—" };
     const date = new Date(dateStr);
@@ -33,7 +33,8 @@ function GradeStatistics() {
       try {
         const res = await fetch("http://localhost:3000/api/statistics");
         if (!res.ok) throw new Error("Failed to fetch course statistics");
-        const data = await res.json();
+        const resJson = await res.json();
+        const data = Array.isArray(resJson.allDistributions) ? resJson.allDistributions : [];
         setCourseStats(data);
 
         const promises = data.map(async (course) => {
@@ -41,7 +42,7 @@ function GradeStatistics() {
           try {
             const url = new URL("http://localhost:3000/api/submissionInfo");
             url.searchParams.append("subjectName", course.subjectName);
-            url.searchParams.append("period", course.period);
+            url.searchParams.append("period", course.period.replace("+", " "));
 
             const res = await fetch(url);
             if (!res.ok) throw new Error("Failed submission fetch");
@@ -50,15 +51,20 @@ function GradeStatistics() {
 
             return {
               key,
-              ...(submissionData.secondLastSubmission && submissionData.lastSubmission
-                ? {
-                    first: formatDate(submissionData.secondLastSubmission),
-                    second: formatDate(submissionData.lastSubmission),
-                  }
-                : {
-                    first: formatDate(submissionData.lastSubmission),
-                    second: { short: "—", full: "—" },
-                  }),
+              ...(() => {
+                // Sort ώστε η first να είναι η παλαιότερη
+                const [firstDate, secondDate] =
+                  submissionData.lastSubmission < submissionData.secondLastSubmission
+                    ? [submissionData.lastSubmission, submissionData.secondLastSubmission]
+                    : [submissionData.secondLastSubmission, submissionData.lastSubmission];
+
+                const isSame = firstDate === secondDate;
+
+                return {
+                  first: formatDate(firstDate),
+                  second: isSame ? { short: "—", full: "—" } : formatDate(secondDate),
+                };
+              })(),
             };
           } catch {
             return { key, first: { short: "—", full: "—" }, second: { short: "—", full: "—" } };
@@ -87,27 +93,18 @@ function GradeStatistics() {
     }));
   };
 
-  const fetchDistribution = async (subjectName, period) => {
-    try {
-      const url = new URL("http://localhost:3000/api/statistics");
-      url.searchParams.append("subjectName", subjectName);
-      url.searchParams.append("period", period);
-
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch distribution");
-      const data = await res.json();
-
-      const normalized = normalizeDistribution(data.distribution || []);
-      setDistribution(normalized);
-    } catch (err) {
-      console.error("[DISTRIBUTION FETCH ERROR]", err);
-      setDistribution([]);
-    }
-  };
-
   const handleCourseClick = (course) => {
     setSelectedCourse(course);
-    fetchDistribution(course.subjectName, course.period);
+    setDistribution(normalizeDistribution(course.distribution || []));
+    if (course.qDistributions) {
+      const qArray = Object.entries(course.qDistributions).map(([question, dist]) => ({
+        question,
+        distribution: normalizeDistribution(dist),
+      }));
+      setQuestionDistributions(qArray);
+    } else {
+      setQuestionDistributions([]);
+    }
   };
 
   const userRole = (() => {
@@ -194,6 +191,29 @@ function GradeStatistics() {
           <em>Select a course to view distribution.</em>
         )}
       </div>
+
+      {selectedCourse && questionDistributions.length > 0 && (
+        <div style={questionSliderStyle}>
+          {questionDistributions.map(({ question, distribution }, i) => (
+            <div key={i} style={largeChartContainer}>
+              <div style={{ textAlign: "center", marginBottom: 8, fontWeight: "600" }}>{question}</div>
+              <ResponsiveContainer width={240} height={200}>
+                <BarChart data={distribution}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="grade"
+                    label={{ value: "Grade", position: "insideBottom", offset: -5 }}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#009688" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -219,6 +239,25 @@ const mainChart = {
   alignItems: "center",
   justifyContent: "center",
   padding: "20px",
+};
+
+const questionSliderStyle = {
+  display: "flex",
+  overflowX: "auto",
+  marginTop: 24,
+  paddingBottom: 12,
+  gap: 12,
+  scrollbarWidth: "thin",
+  scrollbarColor: "#007acc #e0e0e0",
+};
+
+const largeChartContainer = {
+  flex: "0 0 auto",
+  width: 260,
+  background: "#f0f9f9",
+  borderRadius: 8,
+  padding: 12,
+  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
 };
 
 export default GradeStatistics;

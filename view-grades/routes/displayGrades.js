@@ -35,49 +35,57 @@ async function authenticateStudent(req, res, next) {
 }
 
 router.get('/', authenticateStudent, async (req, res) => {
-    const AMnumber = req.user.AMnumber;
-    console.log('[VIEW-GRADES] GET / for AMnumber:', AMnumber);
+  const AMnumber = req.user.AMnumber;
+  console.log('[VIEW-GRADES] GET / for AMnumber:', AMnumber);
 
-    try {
-        const rows = await all(`
-            SELECT s.subjectName, g.*
-            FROM grades g
-            LEFT JOIN subjects s ON g.subID = s.subjectID
-            WHERE g.AMnumber = ?
-        `, [AMnumber]);
-        console.log('[VIEW-GRADES] Query result:', rows);
+  try {
+    const rows = await all(`
+      SELECT s.subjectName, g.*
+      FROM grades g
+      LEFT JOIN subjects s ON g.subID = s.subjectID
+      WHERE g.AMnumber = ?
+    `, [AMnumber]);
 
-        for (const row of rows) {
-            if (!row.subjectName) {
-                console.log(`[VIEW-GRADES] subjectName missing for subID: ${row.subID}`);
-                const subject = await all(
-                    `SELECT subjectName FROM subjects WHERE subjectID = ?`,
-                    [row.subID]
-                );
-                console.log(`[VIEW-GRADES] Query result for subID ${row.subID}:`, subject);
-                row.subjectName = subject[0] ? subject[0].subjectName : '';
-                if (!row.subjectName) {
-                    console.log(`[VIEW-GRADES] No subjectName found for subID: ${row.subID}`);
-                }
-            }
-        }
-
-        const result = {};
-        rows.forEach(row => {
-            const key = `${row.subjectName} - ${row.period}`;
-            result[key] = {
-                grade: row.grade,
-                gradeID: row.gradeID,
-                subjectID: row.subID
-            };
-        });
-
-        console.log('[VIEW-GRADES] Returning result:', result);
-        return res.json(result);
-    } catch (err) {
-        console.error('[DISPLAY GRADES] ❌', err.message);
-        return res.status(500).json({ message: 'Error fetching grades' });
+    // Αν κάποιο row δεν έχει subjectName, το αναζητάμε στη βάση (όπως είχες)
+    for (const row of rows) {
+      if (!row.subjectName) {
+        const subject = await all(
+          `SELECT subjectName FROM subjects WHERE subjectID = ?`,
+          [row.subID]
+        );
+        row.subjectName = subject[0] ? subject[0].subjectName : '';
+      }
     }
+
+    const result = {};
+    rows.forEach(row => {
+      const key = `${row.subjectName} - ${row.period}`;
+      result[key] = {
+        grade: row.grade,
+        gradeID: row.gradeID,
+        subjectID: row.subID,
+        Q: {
+          Q01: row.Q01,
+          Q02: row.Q02,
+          Q03: row.Q03,
+          Q04: row.Q04,
+          Q05: row.Q05,
+          Q06: row.Q06,
+          Q07: row.Q07,
+          Q08: row.Q08,
+          Q09: row.Q09,
+          Q10: row.Q10,
+        }
+      };
+    });
+
+    console.log('[VIEW-GRADES] Returning result:', result);
+    return res.json(result);
+  } catch (err) {
+    console.error('[DISPLAY GRADES] ❌', err.message);
+    return res.status(500).json({ message: 'Error fetching grades' });
+  }
 });
+
 
 module.exports = router;

@@ -21,6 +21,7 @@ function init() {
                 AMnumber TEXT UNIQUE
             )
         `);
+
         db.run(`
             CREATE TABLE IF NOT EXISTS subjects (
                 subjectID INTEGER PRIMARY KEY,
@@ -38,6 +39,7 @@ function init() {
                 });
             }
         });
+
         db.run(`
             CREATE TABLE IF NOT EXISTS grades (
                 gradeID INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +51,17 @@ function init() {
                 subID INTEGER NOT NULL,
                 scale TEXT NOT NULL,
                 grade REAL NOT NULL,
-                submissionDate TEXT NOT NULL
+                submissionDate TEXT NOT NULL,
+                Q01 INTEGER,
+                Q02 INTEGER,
+                Q03 INTEGER,
+                Q04 INTEGER,
+                Q05 INTEGER,
+                Q06 INTEGER,
+                Q07 INTEGER,
+                Q08 INTEGER,
+                Q09 INTEGER,
+                Q10 INTEGER
             )
         `);
     });

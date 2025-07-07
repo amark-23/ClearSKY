@@ -41,12 +41,20 @@ function ReviewRequests() {
         if (!res.ok) throw new Error("Αποτυχία φόρτωσης αιτημάτων.");
         const data = await res.json();
 
-        // Αν δεν έρθει τίποτα, βάζουμε mock
-        if (!data.requests || data.requests.length === 0) {
-          setRequests([]);
-        } else {
-          setRequests(data.requests);
-        }
+        // Φέρνουμε τα ζευγάρια replied (replyID, requestID) από τον orchestrator
+        const repliedRes = await fetch("http://localhost:3000/api/repliedRequests", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        if (!repliedRes.ok) throw new Error("Αποτυχία φόρτωσης απαντημένων αιτημάτων.");
+        const repliedData = await repliedRes.json();
+        const repliedRequestIDs = new Set((repliedData.replied || []).map(r => r.requestID));
+
+        // Φιλτράρουμε τα requests που έχουν ήδη απαντηθεί
+        const filteredRequests = (data.requests || []).filter(r => !repliedRequestIDs.has(r.id));
+
+        setRequests(filteredRequests);
       } catch (err) {
         setError(err.message);
         // Fallback mock
@@ -147,26 +155,6 @@ function ReviewRequests() {
                     onChange={(e) => handleResponseChange(req.id, e.target.value)}
                   />
                 </div>
-
-                <div style={{ marginBottom: "10px" }}>
-                  <label><strong>Απόφαση:</strong></label>
-                  <div style={{ display: "flex", gap: "15px", marginTop: "6px" }}>
-                    {["accepted", "denied"].map((option) => (
-                      <label key={option}>
-                        <input
-                          type="radio"
-                          name={`decision-${req.id}`}
-                          value={option}
-                          checked={decisions[req.id] === option}
-                          onChange={(e) => handleDecisionChange(req.id, e.target.value)}
-                        />
-                        {" "}
-                        {option === "accepted" ? "Αποδοχή" : "Απόρριψη"}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
                 <button style={buttonPrimary} onClick={() => handleSubmit(req.id)}>
                   ✅ Υποβολή
                 </button>

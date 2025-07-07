@@ -1,7 +1,8 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 function Header() {
   let user = null;
+  const navigate = useNavigate();
 
   const token = localStorage.getItem("token");
   if (token) {
@@ -12,6 +13,12 @@ function Header() {
       console.error("Failed to decode token", err);
     }
   }
+
+  // Logout handler
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    navigate("/");
+  };
 
   return (
     <header
@@ -37,8 +44,8 @@ function Header() {
         {user ? `${user.username || user.email} – ${user.role}` : ""}
       </div>
 
-      {/* Navigation */}
-      <nav style={{ display: "flex", gap: "12px" }}>
+      {/* Navigation + Logout */}
+      <nav style={{ display: "flex", gap: "12px", alignItems: "center" }}>
         {user?.role === "instructor" && (
           <>
             <StyledLink to="/upload">Ανάρτηση</StyledLink>
@@ -52,6 +59,26 @@ function Header() {
             <StyledLink to="/statistics">Στατιστικά</StyledLink>
             <StyledLink to="/student/courses">Τα Μαθήματά μου</StyledLink>
           </>
+        )}
+        {user && (
+          <button
+            onClick={handleLogout}
+            style={{
+              marginLeft: "16px",
+              padding: "6px 12px",
+              borderRadius: "6px",
+              backgroundColor: "#dc3545",
+              color: "#fff",
+              border: "none",
+              fontSize: "14px",
+              cursor: "pointer",
+              transition: "0.2s ease",
+            }}
+            onMouseOver={e => (e.currentTarget.style.backgroundColor = "#b52a37")}
+            onMouseOut={e => (e.currentTarget.style.backgroundColor = "#dc3545")}
+          >
+            Logout
+          </button>
         )}
       </nav>
     </header>

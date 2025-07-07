@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   replies-mngmnt:
     build: ./replies-mngmnt
